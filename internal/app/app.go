@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"fmt"
@@ -9,42 +9,21 @@ import (
 	"github.com/KoruptTinker/audio-sync/internal/bluetooth"
 	"github.com/KoruptTinker/audio-sync/internal/config"
 	"github.com/KoruptTinker/audio-sync/internal/led"
+	bt "tinygo.org/x/bluetooth"
 )
 
-func main() {
-	if err := run(); err != nil {
-		log.Fatal(err)
-	}
-}
+func Run() error {
+	cfg := config.Default()
 
-func run() error {
-	// Load configuration
-	cfg, err := config.Load()
-	if err != nil {
-		return fmt.Errorf("load config: %w", err)
-	}
+	dataChannels := createDataChannels(cfg.Bluetooth.DeviceCount)
 
-	// Create data channels for RMS values
-	dataChannels := make([]chan float64, cfg.Bluetooth.DeviceCount)
-	for i := range dataChannels {
-		dataChannels[i] = make(chan float64, 1)
-	}
+	startAudioCapture(cfg.Audio, dataChannels)
 
-	// Start audio capture in background
-	audioHandler := audio.NewRMSHandler(cfg.Audio, dataChannels)
-	go func() {
-		if err := audioHandler.Start(); err != nil {
-			log.Printf("Audio error: %v", err)
-		}
-	}()
-
-	// Initialize Bluetooth scanner
 	scanner := bluetooth.NewScanner(cfg.Bluetooth)
 	if err := scanner.Enable(); err != nil {
 		return fmt.Errorf("enable bluetooth: %w", err)
 	}
 
-	// Scan for LED devices
 	addresses, err := scanner.ScanForDevices()
 	if err != nil {
 		return fmt.Errorf("scan for devices: %w", err)
@@ -56,9 +35,29 @@ func run() error {
 
 	fmt.Printf("Connecting to %d device(s)...\n", len(addresses))
 
-	// Connect to all devices and start LED controllers
+	return runLEDControllers(scanner, addresses, dataChannels, cfg)
+}
+
+func createDataChannels(count int) []chan float64 {
+	channels := make([]chan float64, count)
+	for i := range channels {
+		channels[i] = make(chan float64, 1)
+	}
+	return channels
+}
+
+func startAudioCapture(cfg config.AudioConfig, dataChannels []chan float64) {
+	handler := audio.NewRMSHandler(cfg, dataChannels)
+	go func() {
+		if err := handler.Start(); err != nil {
+			log.Printf("Audio error: %v", err)
+		}
+	}()
+}
+
+func runLEDControllers(scanner *bluetooth.Scanner, addresses []bt.Address, dataChannels []chan float64, cfg config.Config) error {
 	var wg sync.WaitGroup
-	ledManager := led.NewManager(cfg.LED, cfg.Bluetooth)
+	manager := led.NewManager(cfg.LED, cfg.Bluetooth)
 
 	for i, addr := range addresses {
 		conn, err := bluetooth.Connect(scanner.Adapter(), addr, cfg.Bluetooth)
@@ -68,7 +67,7 @@ func run() error {
 		}
 
 		wg.Add(1)
-		go ledManager.StartController(conn, dataChannels[i], &wg)
+		go manager.StartController(conn, dataChannels[i], &wg)
 	}
 
 	wg.Wait()

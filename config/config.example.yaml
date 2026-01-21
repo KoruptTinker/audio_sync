@@ -1,0 +1,17 @@
+audio:
+  devicename: "BlackHole"
+  samplerate: 86000
+  channels: 1
+
+bluetooth:
+  devicename: "GATT--DEMO"
+  devicecount: 2
+  characteristicuuid: "0000fff3-0000-1000-8000-00805f9b34fb"
+
+led:
+  updateinterval: 35ms
+  minbrightness: 100.0
+  maxbrightness: 900.0
+  threshold: 0.01
+  gain: 1.8
+  curveexponent: 4.0
